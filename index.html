@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agri-PV Visualizer | Tracker-Anlagen auf Luftbildern</title>
+<style>
+  :root {
+    --green: #1d5c3f;
+    --green-light: #7fe0b0;
+    --bg: #f4f6f4;
+    --card: #ffffff;
+    --text: #1a2b22;
+    --muted: #5f7268;
+    --border: #dde5df;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  header {
+    background: var(--green);
+    color: #fff;
+    padding: 16px 28px;
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  header h1 { font-size: 1.25rem; font-weight: 600; }
+  header span { color: var(--green-light); font-size: 0.85rem; }
+  .layout {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 20px;
+    padding: 20px 28px;
+    max-width: 1600px;
+    margin: 0 auto;
+  }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+    align-self: start;
+  }
+  .panel h2 {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin-bottom: 10px;
+    margin-top: 18px;
+  }
+  .panel h2:first-child { margin-top: 0; }
+  .row { margin-bottom: 12px; }
+  label { display: block; font-size: 0.82rem; margin-bottom: 3px; color: var(--text); }
+  label .val { float: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--green); }
+  input[type=number] {
+    width: 100%;
+    padding: 5px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.85rem;
+  }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  button {
+    width: 100%;
+    padding: 9px 12px;
+    border: none;
+    border-radius: 7px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+    margin-bottom: 8px;
+  }
+  .btn-primary { background: var(--green); color: #fff; }
+  .btn-primary:hover { background: #17492f; }
+  .btn-secondary { background: #e7eee9; color: var(--green); }
+  .btn-secondary:hover { background: #d8e4dc; }
+  .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; margin-bottom: 8px; }
+  .checkbox-row input { accent-color: var(--green); }
+  .kpi-box {
+    background: #eef6f0;
+    border: 1px solid #cfe5d6;
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 0.85rem;
+  }
+  .kpi-box div { display: flex; justify-content: space-between; padding: 3px 0; }
+  .kpi-box b { font-variant-numeric: tabular-nums; }
+  .kpi-note { font-size: 0.72rem; color: var(--muted); margin-top: 6px; }
+  .canvas-wrap {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+  }
+  .hint {
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+  .hint b { color: var(--green); }
+  #dropzone {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 60px 20px;
+    text-align: center;
+    color: var(--muted);
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  #dropzone.drag { border-color: var(--green); background: #eef6f0; }
+  #dropzone p { margin-bottom: 6px; }
+  #dropzone .big { font-size: 1.05rem; color: var(--text); font-weight: 600; }
+  canvas { width: 100%; height: auto; display: block; border-radius: 6px; cursor: crosshair; }
+  footer {
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--muted);
+    padding: 14px;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Agri-PV Visualizer</h1>
+  <span>Tracker-Anlage schematisch auf beliebige Luftbilder projizieren &middot; Konzept-Demo f&uuml;r Feldwerke</span>
+</header>
+
+<div class="layout">
+  <div class="panel">
+    <h2>1 &middot; Bild</h2>
+    <button class="btn-primary" id="btnUpload">Luftbild hochladen</button>
+    <button class="btn-secondary" id="btnDemo">Demo-Feld laden</button>
+    <input type="file" id="fileInput" accept="image/*" style="display:none">
+
+    <h2>2 &middot; Feld markieren</h2>
+    <p style="font-size:0.8rem;color:var(--muted);margin-bottom:8px">
+      4 Eckpunkte der Fl&auml;che anklicken (im Uhrzeigersinn, oben links beginnend). Punkte sind per Drag verschiebbar.
+    </p>
+    <button class="btn-secondary" id="btnResetCorners">Eckpunkte zur&uuml;cksetzen</button>
+
+    <h2>3 &middot; Anlage konfigurieren</h2>
+    <div class="row">
+      <label>Reihenabstand <span class="val" id="vSpacing">10 m</span></label>
+      <input type="range" id="spacing" min="6" max="16" step="0.5" value="10">
+    </div>
+    <div class="row">
+      <label>Modulbreite (Tracker-Tisch) <span class="val" id="vWidth">2.4 m</span></label>
+      <input type="range" id="modWidth" min="1.5" max="4" step="0.1" value="2.4">
+    </div>
+    <div class="row">
+      <label>Ausrichtung der Reihen <span class="val" id="vTheta">0&deg;</span></label>
+      <input type="range" id="theta" min="-90" max="90" step="1" value="0">
+    </div>
+    <div class="row">
+      <label>Tageszeit (Tracker-Nachf&uuml;hrung) <span class="val" id="vTime">12:00</span></label>
+      <input type="range" id="time" min="6" max="20" step="0.25" value="12">
+    </div>
+    <div class="checkbox-row">
+      <input type="checkbox" id="shadows" checked>
+      <label for="shadows" style="margin:0">Schattenwurf anzeigen</label>
+    </div>
+
+    <h2>4 &middot; Fl&auml;chenma&szlig;e (f&uuml;r Kennzahlen)</h2>
+    <div class="grid2 row">
+      <div>
+        <label>Breite (m)</label>
+        <input type="number" id="fieldW" value="300" min="20">
+      </div>
+      <div>
+        <label>Tiefe (m)</label>
+        <input type="number" id="fieldH" value="200" min="20">
+      </div>
+    </div>
+    <div class="kpi-box" id="kpis">
+      <div><span>Fl&auml;che</span><b id="kHa">6,0 ha</b></div>
+      <div><span>Leistung (~0,8 MWp/ha)</span><b id="kMwp">4,8 MWp</b></div>
+      <div><span>Pacht-Indikativ (bis 3.000 &euro;/ha)</span><b id="kPacht">18.000 &euro;/a</b></div>
+      <div class="kpi-note">Grobe Sch&auml;tzung zur Einordnung, keine Angebotsbasis.</div>
+    </div>
+
+    <h2>5 &middot; Export</h2>
+    <button class="btn-primary" id="btnExport">Als PNG exportieren</button>
+  </div>
+
+  <div class="canvas-wrap">
+    <p class="hint" id="hintText"><b>Schritt 1:</b> Luftbild hochladen oder Demo-Feld laden.</p>
+    <div id="dropzone">
+      <p class="big">Luftbild hierher ziehen</p>
+      <p>oder klicken zum Ausw&auml;hlen &middot; Bild bleibt lokal im Browser</p>
+    </div>
+    <canvas id="canvas" style="display:none"></canvas>
+  </div>
+</div>
+
+<footer>Konzept-Demo &middot; rein clientseitig, keine Daten verlassen den Browser</footer>
+
+<script>
+(() => {
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const dropzone = document.getElementById('dropzone');
+  const hintText = document.getElementById('hintText');
+
+  let img = null;
+  let corners = [];          // 4 points in image-natural coordinates
+  let dragIdx = -1;
+  const HANDLE_R = 14;
+
+  // ---------- image loading ----------
+  function loadImage(src) {
+    const im = new Image();
+    im.onload = () => {
+      img = im;
+      canvas.width = im.naturalWidth;
+      canvas.height = im.naturalHeight;
+      canvas.style.display = 'block';
+      dropzone.style.display = 'none';
+      resetCorners();
+      draw();
+      setHint('<b>Schritt 2:</b> Die 4 Eckpunkte auf die Feldfl&auml;che ziehen, dann Anlage konfigurieren.');
+    };
+    im.src = src;
+  }
+
+  function setHint(html) { hintText.innerHTML = html; }
+
+  document.getElementById('btnUpload').onclick = () => document.getElementById('fileInput').click();
+  dropzone.onclick = () => document.getElementById('fileInput').click();
+  document.getElementById('fileInput').onchange = e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const r = new FileReader();
+    r.onload = ev => loadImage(ev.target.result);
+    r.readAsDataURL(f);
+  };
+  ['dragover','dragenter'].forEach(ev => dropzone.addEventListener(ev, e => {
+    e.preventDefault(); dropzone.classList.add('drag');
+  }));
+  ['dragleave','drop'].forEach(ev => dropzone.addEventListener(ev, e => {
+    e.preventDefault(); dropzone.classList.remove('drag');
+  }));
+  dropzone.addEventListener('drop', e => {
+    const f = e.dataTransfer.files[0];
+    if (!f || !f.type.startsWith('image/')) return;
+    const r = new FileReader();
+    r.onload = ev => loadImage(ev.target.result);
+    r.readAsDataURL(f);
+  });
+
+  // ---------- demo field ----------
+  document.getElementById('btnDemo').onclick = () => {
+    const c = document.createElement('canvas');
+    c.width = 1600; c.height = 1000;
+    const g = c.getContext('2d');
+    const grad = g.createLinearGradient(0, 0, 0, 1000);
+    grad.addColorStop(0, '#9aa96e');
+    grad.addColorStop(1, '#7c8f57');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 1600, 1000);
+    // plough lines with slight perspective
+    g.strokeStyle = 'rgba(70,85,45,0.5)';
+    for (let i = -20; i < 90; i++) {
+      g.lineWidth = 1 + i * 0.04;
+      g.beginPath();
+      g.moveTo(i * 26 - 100, 0);
+      g.lineTo(i * 20 + 60, 1000);
+      g.stroke();
+    }
+    // subtle noise
+    for (let i = 0; i < 9000; i++) {
+      g.fillStyle = 'rgba(' + (60 + Math.random() * 60) + ',' + (75 + Math.random() * 50) + ',40,0.12)';
+      g.fillRect(Math.random() * 1600, Math.random() * 1000, 2, 2);
+    }
+    // a dirt road
+    g.fillStyle = '#b7a77e';
+    g.beginPath();
+    g.moveTo(0, 940); g.lineTo(1600, 880); g.lineTo(1600, 1000); g.lineTo(0, 1000);
+    g.closePath(); g.fill();
+    loadImage(c.toDataURL());
+  };
+
+  // ---------- corners ----------
+  function resetCorners() {
+    const w = canvas.width, h = canvas.height;
+    corners = [
+      { x: w * 0.30, y: h * 0.22 },
+      { x: w * 0.78, y: h * 0.28 },
+      { x: w * 0.88, y: h * 0.80 },
+      { x: w * 0.14, y: h * 0.72 }
+    ];
+  }
+  document.getElementById('btnResetCorners').onclick = () => { if (img) { resetCorners(); draw(); } };
+
+  function canvasPos(e) {
+    const r = canvas.getBoundingClientRect();
+    return {
+      x: (e.clientX - r.left) * (canvas.width / r.width),
+      y: (e.clientY - r.top) * (canvas.height / r.height)
+    };
+  }
+  canvas.addEventListener('pointerdown', e => {
+    if (!img) return;
+    const p = canvasPos(e);
+    const scale = canvas.width / canvas.getBoundingClientRect().width;
+    const rr = HANDLE_R * scale * 1.6;
+    dragIdx = corners.findIndex(c => Math.hypot(c.x - p.x, c.y - p.y) < rr);
+    if (dragIdx >= 0) canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (dragIdx < 0) return;
+    const p = canvasPos(e);
+    corners[dragIdx].x = Math.max(0, Math.min(canvas.width, p.x));
+    corners[dragIdx].y = Math.max(0, Math.min(canvas.height, p.y));
+    draw();
+  });
+  canvas.addEventListener('pointerup', () => { dragIdx = -1; });
+
+  // ---------- homography: unit square -> quad ----------
+  function computeHomography(dst) {
+    // src: (0,0),(1,0),(1,1),(0,1)
+    const [p0, p1, p2, p3] = dst;
+    const src = [[0,0],[1,0],[1,1],[0,1]];
+    const d = [[p0.x,p0.y],[p1.x,p1.y],[p2.x,p2.y],[p3.x,p3.y]];
+    // solve A h = b, 8x8
+    const A = [], b = [];
+    for (let i = 0; i < 4; i++) {
+      const [u, v] = src[i], [x, y] = d[i];
+      A.push([u, v, 1, 0, 0, 0, -u * x, -v * x]); b.push(x);
+      A.push([0, 0, 0, u, v, 1, -u * y, -v * y]); b.push(y);
+    }
+    // gaussian elimination
+    for (let c = 0; c < 8; c++) {
+      let piv = c;
+      for (let r2 = c + 1; r2 < 8; r2++) if (Math.abs(A[r2][c]) > Math.abs(A[piv][c])) piv = r2;
+      [A[c], A[piv]] = [A[piv], A[c]]; [b[c], b[piv]] = [b[piv], b[c]];
+      const pv = A[c][c];
+      if (Math.abs(pv) < 1e-12) return null;
+      for (let r2 = 0; r2 < 8; r2++) {
+        if (r2 === c) continue;
+        const f = A[r2][c] / pv;
+        for (let k = c; k < 8; k++) A[r2][k] -= f * A[c][k];
+        b[r2] -= f * b[c];
+      }
+    }
+    const h = b.map((v, i) => v / A[i][i]);
+    return h; // h0..h7
+  }
+  function project(h, u, v) {
+    const w = h[6] * u + h[7] * v + 1;
+    return { x: (h[0] * u + h[1] * v + h[2]) / w, y: (h[3] * u + h[4] * v + h[5]) / w };
+  }
+
+  // ---------- params ----------
+  const $ = id => document.getElementById(id);
+  const params = () => ({
+    spacing: parseFloat($('spacing').value),
+    modWidth: parseFloat($('modWidth').value),
+    theta: parseFloat($('theta').value) * Math.PI / 180,
+    time: parseFloat($('time').value),
+    shadows: $('shadows').checked,
+    W: Math.max(20, parseFloat($('fieldW').value) || 300),
+    H: Math.max(20, parseFloat($('fieldH').value) || 200)
+  });
+
+  ['spacing','modWidth','theta','time'].forEach(id => $(id).addEventListener('input', () => { updateLabels(); draw(); }));
+  $('shadows').addEventListener('change', draw);
+  ['fieldW','fieldH'].forEach(id => $(id).addEventListener('input', () => { updateKpis(); draw(); }));
+
+  function updateLabels() {
+    $('vSpacing').textContent = $('spacing').value + ' m';
+    $('vWidth').textContent = parseFloat($('modWidth').value).toFixed(1) + ' m';
+    $('vTheta').textContent = $('theta').value + '°';
+    const t = parseFloat($('time').value);
+    const hh = Math.floor(t), mm = Math.round((t - hh) * 60);
+    $('vTime').textContent = String(hh).padStart(2,'0') + ':' + String(mm).padStart(2,'0');
+    updateKpis();
+  }
+  function updateKpis() {
+    const p = params();
+    const ha = p.W * p.H / 10000;
+    const mwp = ha * 0.8;
+    const pacht = ha * 3000;
+    const fmt = n => n.toLocaleString('de-DE', { maximumFractionDigits: 1 });
+    $('kHa').textContent = fmt(ha) + ' ha';
+    $('kMwp').textContent = fmt(mwp) + ' MWp';
+    $('kPacht').textContent = Math.round(pacht).toLocaleString('de-DE') + ' €/a';
+  }
+
+  // ---------- drawing ----------
+  function pathQuad(c, pts, subdiv) {
+    // pts: array of {u,v} in unit space, draws closed path with subdivided edges
+    const h = pts.h;
+    c.beginPath();
+    for (let i = 0; i < pts.poly.length; i++) {
+      const a = pts.poly[i], b2 = pts.poly[(i + 1) % pts.poly.length];
+      for (let s = 0; s <= subdiv; s++) {
+        const t = s / subdiv;
+        const u = a[0] + (b2[0] - a[0]) * t;
+        const v = a[1] + (b2[1] - a[1]) * t;
+        const p = project(h, u, v);
+        if (i === 0 && s === 0) c.moveTo(p.x, p.y); else c.lineTo(p.x, p.y);
+      }
+    }
+    c.closePath();
+  }
+
+  function draw(exportMode) {
+    if (!img) return;
+    const c = ctx;
+    c.clearRect(0, 0, canvas.width, canvas.height);
+    c.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+    const p = params();
+    const h = computeHomography(corners);
+    if (h) {
+      // clip to field quad
+      c.save();
+      c.beginPath();
+      corners.forEach((pt, i) => i === 0 ? c.moveTo(pt.x, pt.y) : c.lineTo(pt.x, pt.y));
+      c.closePath();
+      c.clip();
+
+      // tracker geometry in meters (field space), origin = field center
+      const W = p.W, H = p.H;
+      const dirX = Math.cos(p.theta), dirY = Math.sin(p.theta);
+      const nX = -dirY, nY = dirX;
+      const diag = Math.hypot(W, H);
+      const nRows = Math.ceil(diag / p.spacing) + 1;
+
+      // tracker tilt from time: flat at 13:00, steep morning/evening
+      const dt = Math.abs(p.time - 13) / 7;               // 0..1
+      const tilt = (10 + 55 * dt) * Math.PI / 180;        // 10..65 deg
+      const visW = p.modWidth * (0.30 + 0.70 * Math.cos(tilt));
+      // shadow: direction east/west depending on am/pm, length grows to edges of day
+      const shadowSign = p.time < 13 ? -1 : 1;
+      const shadowLen = 0.8 + 7 * Math.pow(dt, 1.6);
+
+      const segLen = 22, gap = 1.5;                        // tracker table segments
+
+      const toUnit = (x, y) => [ (x + W / 2) / W, (y + H / 2) / H ];
+
+      const drawBands = (offsetM, fill, widthM) => {
+        c.fillStyle = fill;
+        for (let k = -nRows; k <= nRows; k++) {
+          const off = k * p.spacing;
+          for (let s = -diag; s < diag; s += segLen + gap) {
+            const cx = (off + offsetM) ;
+            // segment corners in field space
+            const x0 = s * dirX + cx * nX, y0 = s * dirY + cx * nY;
+            const x1 = (s + segLen) * dirX + cx * nX, y1 = (s + segLen) * dirY + cx * nY;
+            const wx = (widthM / 2) * nX, wy = (widthM / 2) * nY;
+            const poly = [
+              toUnit(x0 - wx, y0 - wy),
+              toUnit(x1 - wx, y1 - wy),
+              toUnit(x1 + wx, y1 + wy),
+              toUnit(x0 + wx, y0 + wy)
+            ];
+            pathQuad(c, { h, poly }, 8);
+            c.fill();
+          }
+        }
+      };
+
+      if (p.shadows) {
+        drawBands(shadowSign * (visW / 2 + shadowLen / 2), 'rgba(20,30,20,0.35)', shadowLen);
+      }
+      // module tables: dark blue with subtle edge
+      drawBands(0, 'rgba(18,28,52,0.92)', visW);
+      drawBands(0, 'rgba(90,130,200,0.25)', visW * 0.55); // glass sheen
+      c.restore();
+    }
+
+    // handles (not in export)
+    if (!exportMode) {
+      corners.forEach((pt, i) => {
+        c.beginPath();
+        c.arc(pt.x, pt.y, HANDLE_R, 0, Math.PI * 2);
+        c.fillStyle = 'rgba(255,255,255,0.85)';
+        c.fill();
+        c.lineWidth = 3;
+        c.strokeStyle = '#1d5c3f';
+        c.stroke();
+        c.fillStyle = '#1d5c3f';
+        c.font = 'bold ' + HANDLE_R + 'px sans-serif';
+        c.textAlign = 'center';
+        c.textBaseline = 'middle';
+        c.fillText(String(i + 1), pt.x, pt.y);
+      });
+      c.setLineDash([10, 8]);
+      c.lineWidth = 2.5;
+      c.strokeStyle = 'rgba(255,255,255,0.9)';
+      c.beginPath();
+      corners.forEach((pt, i) => i === 0 ? c.moveTo(pt.x, pt.y) : c.lineTo(pt.x, pt.y));
+      c.closePath();
+      c.stroke();
+      c.setLineDash([]);
+    }
+  }
+
+  // ---------- export ----------
+  document.getElementById('btnExport').onclick = () => {
+    if (!img) return;
+    draw(true);
+    const a = document.createElement('a');
+    a.download = 'agri-pv-visualisierung.png';
+    a.href = canvas.toDataURL('image/png');
+    a.click();
+    draw(false);
+  };
+
+  updateLabels();
+})();
+</script>
+</body>
+</html>

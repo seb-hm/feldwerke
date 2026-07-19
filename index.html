@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Agri-Tracker-PV Visualizer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
 <style>
   :root {
     --green: #1d5c3f;
@@ -16,7 +19,7 @@
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    font-family: "Segoe UI", system-ui, sans-serif;
+    font-family: "DM Sans", "Segoe UI", system-ui, sans-serif;
     background: var(--bg);
     color: var(--text);
     min-height: 100vh;
@@ -114,6 +117,9 @@
     cursor: pointer;
   }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  button, input {
+    font-family: inherit;
+  }
   button {
     width: 100%;
     padding: 6px 10px;
@@ -240,6 +246,10 @@
     <div class="checkbox-row">
       <input type="checkbox" id="shadows" checked>
       <label for="shadows" style="margin:0">Schattenwurf anzeigen</label>
+    </div>
+    <div class="checkbox-row">
+      <input type="checkbox" id="fullCover">
+      <label for="fullCover" style="margin:0">Auf gesamte Bildfl&auml;che ausweiten</label>
     </div>
 
     <h2>4 &middot; Fl&auml;chenma&szlig;e</h2>
@@ -426,6 +436,7 @@
     time: parseFloat($('time').value),
     shadows: $('shadows').checked,
     grid: $('grid').checked,
+    fullCover: $('fullCover').checked,
     autoPersp: $('autoPersp').checked,
     perspManual: parseFloat($('persp').value) / 100,
     W: Math.max(20, parseFloat($('fieldW').value) || 300),
@@ -433,7 +444,7 @@
   });
 
   ['spacing','modWidth','theta','time','persp'].forEach(id => $(id).addEventListener('input', () => { updateLabels(); draw(); }));
-  ['shadows','grid'].forEach(id => $(id).addEventListener('change', () => draw()));
+  ['shadows','grid','fullCover'].forEach(id => $(id).addEventListener('change', () => draw()));
   $('autoPersp').addEventListener('change', () => {
     $('persp').disabled = $('autoPersp').checked;
     updateLabels(); draw();
@@ -497,27 +508,39 @@
       const segLen = 22, gap = 1.5;
       const toUnit = (x, y) => [(x + W / 2) / W, (y + H / 2) / H];
       const inField = (u, v) => u > -0.02 && u < 1.02 && v > -0.02 && v < 1.02;
+      const FC = p.fullCover;
+      const denom = (u, v) => h[6] * u + h[7] * v + 1;
+      const kMax = FC ? nRows * 6 : nRows;
+      const sExt = FC ? diag * 6 : diag;
 
-      // expanded clip: quad with top edge lifted so standing panels are not cut off
-      const liftTop = factor > 0.03
-        ? (AXIS_HEIGHT + edgeLift + 0.5) * Math.max(ppmAt(h, 0, 0, H), ppmAt(h, 1, 0, H)) * factor
-        : 0;
       c.save();
-      c.beginPath();
-      c.moveTo(corners[0].x, corners[0].y - liftTop);
-      c.lineTo(corners[1].x, corners[1].y - liftTop);
-      c.lineTo(corners[2].x, corners[2].y);
-      c.lineTo(corners[3].x, corners[3].y);
-      c.closePath();
-      c.clip();
+      if (!FC) {
+        // expanded clip: quad with top edge lifted so standing panels are not cut off
+        const liftTop = factor > 0.03
+          ? (AXIS_HEIGHT + edgeLift + 0.5) * Math.max(ppmAt(h, 0, 0, H), ppmAt(h, 1, 0, H)) * factor
+          : 0;
+        c.beginPath();
+        c.moveTo(corners[0].x, corners[0].y - liftTop);
+        c.lineTo(corners[1].x, corners[1].y - liftTop);
+        c.lineTo(corners[2].x, corners[2].y);
+        c.lineTo(corners[3].x, corners[3].y);
+        c.closePath();
+        c.clip();
+      }
 
       // collect rows, sorted far -> near (image y ascending) for correct overlap
       const rows = [];
-      for (let k = -nRows; k <= nRows; k++) {
+      for (let k = -kMax; k <= kMax; k++) {
         const off = k * p.spacing;
         const cu = toUnit(off * nX, off * nY);
-        if (cu[0] < -0.6 || cu[0] > 1.6 || cu[1] < -0.6 || cu[1] > 1.6) continue;
-        rows.push({ off, cy: project(h, cu[0], cu[1]).y });
+        if (FC) {
+          if (denom(cu[0], cu[1]) < 0.12) continue;
+          const pc = project(h, cu[0], cu[1]);
+          rows.push({ off, cy: pc.y });
+        } else {
+          if (cu[0] < -0.6 || cu[0] > 1.6 || cu[1] < -0.6 || cu[1] > 1.6) continue;
+          rows.push({ off, cy: project(h, cu[0], cu[1]).y });
+        }
       }
       rows.sort((a, b) => a.cy - b.cy);
 
@@ -533,10 +556,14 @@
           [...toUnit(x0 + wx, y0 + wy), hB]
         ];
       };
-      const segCenterInField = (s, cx) => {
+      const segVisible = (s, cx) => {
         const mx = (s + segLen / 2) * dirX + cx * nX, my = (s + segLen / 2) * dirY + cx * nY;
         const [u, v] = toUnit(mx, my);
-        return inField(u, v);
+        if (!FC) return inField(u, v);
+        if (denom(u, v) < 0.12) return false;
+        const pp = project(h, u, v);
+        return pp.x > -0.2 * canvas.width && pp.x < 1.2 * canvas.width &&
+               pp.y > -0.2 * canvas.height && pp.y < 1.2 * canvas.height;
       };
 
       // 1) ground shadows for all rows first
@@ -544,8 +571,8 @@
         c.fillStyle = 'rgba(20,30,20,0.35)';
         const shOff = shadowSign * (visW / 2 + shadowLen / 2 + factor * AXIS_HEIGHT * 0.8);
         for (const row of rows) {
-          for (let s = -diag; s < diag; s += segLen + gap) {
-            if (!segCenterInField(s, row.off)) continue;
+          for (let s = -sExt; s < sExt; s += segLen + gap) {
+            if (!segVisible(s, row.off)) continue;
             pathPoly3D(c, h, segPoly(s, row.off + shOff, shadowLen + factor * AXIS_HEIGHT, 0, 0), 4, H, 0);
             c.fill();
           }
@@ -559,8 +586,8 @@
       const heights = shadowSign > 0 ? [hHigh, hLow] : [hLow, hHigh];
 
       for (const row of rows) {
-        for (let s = -diag; s < diag; s += segLen + gap) {
-          if (!segCenterInField(s, row.off)) continue;
+        for (let s = -sExt; s < sExt; s += segLen + gap) {
+          if (!segVisible(s, row.off)) continue;
 
           // posts (only when oblique enough)
           if (factor > 0.06) {
@@ -628,7 +655,7 @@
           c.save();
           c.translate(mid.x, mid.y);
           c.rotate(ang);
-          c.font = '600 ' + fs + 'px "Segoe UI", sans-serif';
+          c.font = '600 ' + fs + 'px "DM Sans", sans-serif';
           c.textAlign = 'center';
           c.textBaseline = 'bottom';
           c.lineWidth = fs / 4.5;

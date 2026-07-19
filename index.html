@@ -607,6 +607,28 @@
           c.stroke();
         }
         c.restore();
+
+        // axis labels: Breite along top edge, Tiefe along left edge
+        const drawAxisLabel = (text, pA, pB) => {
+          let ang = Math.atan2(pB.y - pA.y, pB.x - pA.x);
+          if (ang > Math.PI / 2 || ang < -Math.PI / 2) ang += Math.PI; // keep upright
+          const mid = { x: (pA.x + pB.x) / 2, y: (pA.y + pB.y) / 2 };
+          const fs = Math.max(14, canvas.width / 70);
+          c.save();
+          c.translate(mid.x, mid.y);
+          c.rotate(ang);
+          c.font = '600 ' + fs + 'px "Segoe UI", sans-serif';
+          c.textAlign = 'center';
+          c.textBaseline = 'bottom';
+          c.lineWidth = fs / 4.5;
+          c.strokeStyle = 'rgba(20,40,28,0.85)';
+          c.strokeText(text, 0, -fs * 0.35);
+          c.fillStyle = '#ffffff';
+          c.fillText(text, 0, -fs * 0.35);
+          c.restore();
+        };
+        drawAxisLabel('Breite ' + Math.round(W) + ' m', project(h, 0.15, 0.04), project(h, 0.85, 0.04));
+        drawAxisLabel('Tiefe ' + Math.round(H) + ' m', project(h, 0.04, 0.15), project(h, 0.04, 0.85));
       }
     }
 

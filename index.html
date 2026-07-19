@@ -61,6 +61,7 @@
   label { display: block; font-size: 0.82rem; margin-bottom: 3px; color: var(--text); }
   label .val { float: right; color: var(--muted); font-variant-numeric: tabular-nums; }
   input[type=range] { width: 100%; accent-color: var(--green); }
+  input[type=range]:disabled { opacity: 0.45; }
   input[type=number] {
     width: 100%;
     padding: 5px 8px;
@@ -85,6 +86,15 @@
   .btn-secondary:hover { background: #d8e4dc; }
   .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; margin-bottom: 8px; }
   .checkbox-row input { accent-color: var(--green); }
+  .note {
+    font-size: 0.76rem;
+    color: var(--muted);
+    background: #fbf6e8;
+    border: 1px solid #eee3c2;
+    border-radius: 7px;
+    padding: 8px 10px;
+    margin-bottom: 10px;
+  }
   .kpi-box {
     background: #eef6f0;
     border: 1px solid #cfe5d6;
@@ -142,9 +152,15 @@
     <input type="file" id="fileInput" accept="image/*" style="display:none">
 
     <h2>2 &middot; Feld markieren</h2>
-    <p style="font-size:0.8rem;color:var(--muted);margin-bottom:8px">
-      4 Eckpunkte der Fl&auml;che anklicken (im Uhrzeigersinn, oben links beginnend). Punkte sind per Drag verschiebbar.
-    </p>
+    <div class="note">
+      <b>Wichtig:</b> Die 4 Punkte m&uuml;ssen ein echtes Rechteck <i>auf dem Boden</i> markieren
+      (z.&nbsp;B. die Ecken eines Schlags) &ndash; nicht den Bildrand. Das Gitter zeigt, ob die
+      Perspektive plausibel ist.
+    </div>
+    <div class="checkbox-row">
+      <input type="checkbox" id="grid" checked>
+      <label for="grid" style="margin:0">Perspektiven-Gitter anzeigen (25&nbsp;m)</label>
+    </div>
     <button class="btn-secondary" id="btnResetCorners">Eckpunkte zur&uuml;cksetzen</button>
 
     <h2>3 &middot; Anlage konfigurieren</h2>
@@ -163,6 +179,14 @@
     <div class="row">
       <label>Tageszeit (Tracker-Nachf&uuml;hrung) <span class="val" id="vTime">12:00</span></label>
       <input type="range" id="time" min="6" max="20" step="0.25" value="12">
+    </div>
+    <div class="row">
+      <label>Kameraperspektive <span class="val" id="vPersp">auto</span></label>
+      <input type="range" id="persp" min="0" max="100" step="1" value="0" disabled>
+      <div class="checkbox-row" style="margin-top:5px">
+        <input type="checkbox" id="autoPersp" checked>
+        <label for="autoPersp" style="margin:0">automatisch aus Feldmarkierung sch&auml;tzen</label>
+      </div>
     </div>
     <div class="checkbox-row">
       <input type="checkbox" id="shadows" checked>
@@ -211,9 +235,10 @@
   const hintText = document.getElementById('hintText');
 
   let img = null;
-  let corners = [];          // 4 points in image-natural coordinates
+  let corners = [];          // 4 points in image-natural coordinates: TL, TR, BR, BL
   let dragIdx = -1;
   const HANDLE_R = 14;
+  const AXIS_HEIGHT = 2.4;   // m, tracker rotation axis above ground
 
   // ---------- image loading ----------
   function loadImage(src) {
@@ -226,7 +251,7 @@
       dropzone.style.display = 'none';
       resetCorners();
       draw();
-      setHint('<b>Schritt 2:</b> Die 4 Eckpunkte auf die Feldfl&auml;che ziehen, dann Anlage konfigurieren.');
+      setHint('<b>Schritt 2:</b> Die 4 Eckpunkte auf ein Boden-Rechteck ziehen (Gitter pr&uuml;fen), dann Anlage konfigurieren.');
     };
     im.src = src;
   }
@@ -266,7 +291,6 @@
     grad.addColorStop(1, '#7c8f57');
     g.fillStyle = grad;
     g.fillRect(0, 0, 1600, 1000);
-    // plough lines with slight perspective
     g.strokeStyle = 'rgba(70,85,45,0.5)';
     for (let i = -20; i < 90; i++) {
       g.lineWidth = 1 + i * 0.04;
@@ -275,12 +299,10 @@
       g.lineTo(i * 20 + 60, 1000);
       g.stroke();
     }
-    // subtle noise
     for (let i = 0; i < 9000; i++) {
       g.fillStyle = 'rgba(' + (60 + Math.random() * 60) + ',' + (75 + Math.random() * 50) + ',40,0.12)';
       g.fillRect(Math.random() * 1600, Math.random() * 1000, 2, 2);
     }
-    // a dirt road
     g.fillStyle = '#b7a77e';
     g.beginPath();
     g.moveTo(0, 940); g.lineTo(1600, 880); g.lineTo(1600, 1000); g.lineTo(0, 1000);
@@ -326,18 +348,14 @@
 
   // ---------- homography: unit square -> quad ----------
   function computeHomography(dst) {
-    // src: (0,0),(1,0),(1,1),(0,1)
-    const [p0, p1, p2, p3] = dst;
     const src = [[0,0],[1,0],[1,1],[0,1]];
-    const d = [[p0.x,p0.y],[p1.x,p1.y],[p2.x,p2.y],[p3.x,p3.y]];
-    // solve A h = b, 8x8
+    const d = dst.map(p => [p.x, p.y]);
     const A = [], b = [];
     for (let i = 0; i < 4; i++) {
       const [u, v] = src[i], [x, y] = d[i];
       A.push([u, v, 1, 0, 0, 0, -u * x, -v * x]); b.push(x);
       A.push([0, 0, 0, u, v, 1, -u * y, -v * y]); b.push(y);
     }
-    // gaussian elimination
     for (let c = 0; c < 8; c++) {
       let piv = c;
       for (let r2 = c + 1; r2 < 8; r2++) if (Math.abs(A[r2][c]) > Math.abs(A[piv][c])) piv = r2;
@@ -351,12 +369,28 @@
         b[r2] -= f * b[c];
       }
     }
-    const h = b.map((v, i) => v / A[i][i]);
-    return h; // h0..h7
+    return b.map((v, i) => v / A[i][i]);
   }
   function project(h, u, v) {
     const w = h[6] * u + h[7] * v + 1;
     return { x: (h[0] * u + h[1] * v + h[2]) / w, y: (h[3] * u + h[4] * v + h[5]) / w };
+  }
+
+  // pixels per meter (vertical world scale approximation) at unit-space point
+  function ppmAt(h, u, v, Hm) {
+    const eps = 0.01;
+    const p1 = project(h, u, v);
+    const p2 = project(h, u, v - eps);
+    return Math.hypot(p2.x - p1.x, p2.y - p1.y) / (eps * Hm);
+  }
+
+  // estimate obliqueness of the marked quad: 0 = nadir, 1 = strongly oblique
+  function estimatePerspFactor() {
+    const topLen = Math.hypot(corners[1].x - corners[0].x, corners[1].y - corners[0].y);
+    const botLen = Math.hypot(corners[2].x - corners[3].x, corners[2].y - corners[3].y);
+    if (botLen < 1) return 0;
+    const ratio = topLen / botLen;
+    return Math.max(0, Math.min(1, Math.abs(1 - ratio) * 1.8));
   }
 
   // ---------- params ----------
@@ -367,12 +401,19 @@
     theta: parseFloat($('theta').value) * Math.PI / 180,
     time: parseFloat($('time').value),
     shadows: $('shadows').checked,
+    grid: $('grid').checked,
+    autoPersp: $('autoPersp').checked,
+    perspManual: parseFloat($('persp').value) / 100,
     W: Math.max(20, parseFloat($('fieldW').value) || 300),
     H: Math.max(20, parseFloat($('fieldH').value) || 200)
   });
 
-  ['spacing','modWidth','theta','time'].forEach(id => $(id).addEventListener('input', () => { updateLabels(); draw(); }));
-  $('shadows').addEventListener('change', draw);
+  ['spacing','modWidth','theta','time','persp'].forEach(id => $(id).addEventListener('input', () => { updateLabels(); draw(); }));
+  ['shadows','grid'].forEach(id => $(id).addEventListener('change', draw));
+  $('autoPersp').addEventListener('change', () => {
+    $('persp').disabled = $('autoPersp').checked;
+    updateLabels(); draw();
+  });
   ['fieldW','fieldH'].forEach(id => $(id).addEventListener('input', () => { updateKpis(); draw(); }));
 
   function updateLabels() {
@@ -382,6 +423,7 @@
     const t = parseFloat($('time').value);
     const hh = Math.floor(t), mm = Math.round((t - hh) * 60);
     $('vTime').textContent = String(hh).padStart(2,'0') + ':' + String(mm).padStart(2,'0');
+    $('vPersp').textContent = $('autoPersp').checked ? 'auto' : $('persp').value + ' %';
     updateKpis();
   }
   function updateKpis() {
@@ -395,19 +437,21 @@
     $('kPacht').textContent = Math.round(pacht).toLocaleString('de-DE') + ' €/a';
   }
 
-  // ---------- drawing ----------
-  function pathQuad(c, pts, subdiv) {
-    // pts: array of {u,v} in unit space, draws closed path with subdivided edges
-    const h = pts.h;
+  // ---------- drawing helpers ----------
+  // poly: array of [u, v, heightMeters]; subdivides edges, lifts points by height * ppm * factor
+  function pathPoly3D(c, h, poly, subdiv, Hm, factor) {
     c.beginPath();
-    for (let i = 0; i < pts.poly.length; i++) {
-      const a = pts.poly[i], b2 = pts.poly[(i + 1) % pts.poly.length];
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], b2 = poly[(i + 1) % poly.length];
       for (let s = 0; s <= subdiv; s++) {
         const t = s / subdiv;
         const u = a[0] + (b2[0] - a[0]) * t;
         const v = a[1] + (b2[1] - a[1]) * t;
+        const hgt = a[2] + (b2[2] - a[2]) * t;
         const p = project(h, u, v);
-        if (i === 0 && s === 0) c.moveTo(p.x, p.y); else c.lineTo(p.x, p.y);
+        const lift = hgt > 0 && factor > 0 ? hgt * ppmAt(h, u, v, Hm) * factor : 0;
+        const y = p.y - lift;
+        if (i === 0 && s === 0) c.moveTo(p.x, y); else c.lineTo(p.x, y);
       }
     }
     c.closePath();
@@ -422,61 +466,145 @@
     const p = params();
     const h = computeHomography(corners);
     if (h) {
-      // clip to field quad
-      c.save();
-      c.beginPath();
-      corners.forEach((pt, i) => i === 0 ? c.moveTo(pt.x, pt.y) : c.lineTo(pt.x, pt.y));
-      c.closePath();
-      c.clip();
-
-      // tracker geometry in meters (field space), origin = field center
+      const factor = p.autoPersp ? estimatePerspFactor() : p.perspManual;
       const W = p.W, H = p.H;
       const dirX = Math.cos(p.theta), dirY = Math.sin(p.theta);
       const nX = -dirY, nY = dirX;
       const diag = Math.hypot(W, H);
       const nRows = Math.ceil(diag / p.spacing) + 1;
 
-      // tracker tilt from time: flat at 13:00, steep morning/evening
-      const dt = Math.abs(p.time - 13) / 7;               // 0..1
-      const tilt = (10 + 55 * dt) * Math.PI / 180;        // 10..65 deg
-      const visW = p.modWidth * (0.30 + 0.70 * Math.cos(tilt));
-      // shadow: direction east/west depending on am/pm, length grows to edges of day
+      const dt = Math.abs(p.time - 13) / 7;
+      const tilt = (10 + 55 * dt) * Math.PI / 180;
+      const visW = p.modWidth * Math.cos(tilt) + 0.15;
+      const edgeLift = (p.modWidth / 2) * Math.sin(tilt);
       const shadowSign = p.time < 13 ? -1 : 1;
       const shadowLen = 0.8 + 7 * Math.pow(dt, 1.6);
 
-      const segLen = 22, gap = 1.5;                        // tracker table segments
+      const segLen = 22, gap = 1.5;
+      const toUnit = (x, y) => [(x + W / 2) / W, (y + H / 2) / H];
+      const inField = (u, v) => u > -0.02 && u < 1.02 && v > -0.02 && v < 1.02;
 
-      const toUnit = (x, y) => [ (x + W / 2) / W, (y + H / 2) / H ];
+      // expanded clip: quad with top edge lifted so standing panels are not cut off
+      const liftTop = factor > 0.03
+        ? (AXIS_HEIGHT + edgeLift + 0.5) * Math.max(ppmAt(h, 0, 0, H), ppmAt(h, 1, 0, H)) * factor
+        : 0;
+      c.save();
+      c.beginPath();
+      c.moveTo(corners[0].x, corners[0].y - liftTop);
+      c.lineTo(corners[1].x, corners[1].y - liftTop);
+      c.lineTo(corners[2].x, corners[2].y);
+      c.lineTo(corners[3].x, corners[3].y);
+      c.closePath();
+      c.clip();
 
-      const drawBands = (offsetM, fill, widthM) => {
-        c.fillStyle = fill;
-        for (let k = -nRows; k <= nRows; k++) {
-          const off = k * p.spacing;
+      // collect rows, sorted far -> near (image y ascending) for correct overlap
+      const rows = [];
+      for (let k = -nRows; k <= nRows; k++) {
+        const off = k * p.spacing;
+        const cu = toUnit(off * nX, off * nY);
+        if (cu[0] < -0.6 || cu[0] > 1.6 || cu[1] < -0.6 || cu[1] > 1.6) continue;
+        rows.push({ off, cy: project(h, cu[0], cu[1]).y });
+      }
+      rows.sort((a, b) => a.cy - b.cy);
+
+      // segment polygon builder: center offset cx (m across rows), width wM, heights [hA, hB] on the two long edges
+      const segPoly = (s, cx, wM, hA, hB) => {
+        const x0 = s * dirX + cx * nX, y0 = s * dirY + cx * nY;
+        const x1 = (s + segLen) * dirX + cx * nX, y1 = (s + segLen) * dirY + cx * nY;
+        const wx = (wM / 2) * nX, wy = (wM / 2) * nY;
+        return [
+          [...toUnit(x0 - wx, y0 - wy), hA],
+          [...toUnit(x1 - wx, y1 - wy), hA],
+          [...toUnit(x1 + wx, y1 + wy), hB],
+          [...toUnit(x0 + wx, y0 + wy), hB]
+        ];
+      };
+      const segCenterInField = (s, cx) => {
+        const mx = (s + segLen / 2) * dirX + cx * nX, my = (s + segLen / 2) * dirY + cx * nY;
+        const [u, v] = toUnit(mx, my);
+        return inField(u, v);
+      };
+
+      // 1) ground shadows for all rows first
+      if (p.shadows) {
+        c.fillStyle = 'rgba(20,30,20,0.35)';
+        const shOff = shadowSign * (visW / 2 + shadowLen / 2 + factor * AXIS_HEIGHT * 0.8);
+        for (const row of rows) {
           for (let s = -diag; s < diag; s += segLen + gap) {
-            const cx = (off + offsetM) ;
-            // segment corners in field space
-            const x0 = s * dirX + cx * nX, y0 = s * dirY + cx * nY;
-            const x1 = (s + segLen) * dirX + cx * nX, y1 = (s + segLen) * dirY + cx * nY;
-            const wx = (widthM / 2) * nX, wy = (widthM / 2) * nY;
-            const poly = [
-              toUnit(x0 - wx, y0 - wy),
-              toUnit(x1 - wx, y1 - wy),
-              toUnit(x1 + wx, y1 + wy),
-              toUnit(x0 + wx, y0 + wy)
-            ];
-            pathQuad(c, { h, poly }, 8);
+            if (!segCenterInField(s, row.off)) continue;
+            pathPoly3D(c, h, segPoly(s, row.off + shOff, shadowLen + factor * AXIS_HEIGHT, 0, 0), 4, H, 0);
             c.fill();
           }
         }
-      };
-
-      if (p.shadows) {
-        drawBands(shadowSign * (visW / 2 + shadowLen / 2), 'rgba(20,30,20,0.35)', shadowLen);
       }
-      // module tables: dark blue with subtle edge
-      drawBands(0, 'rgba(18,28,52,0.92)', visW);
-      drawBands(0, 'rgba(90,130,200,0.25)', visW * 0.55); // glass sheen
+
+      // 2) rows far -> near: posts, then panel face
+      const hHigh = AXIS_HEIGHT + edgeLift;
+      const hLow = Math.max(0.4, AXIS_HEIGHT - edgeLift);
+      // high edge faces away from the sun side
+      const heights = shadowSign > 0 ? [hHigh, hLow] : [hLow, hHigh];
+
+      for (const row of rows) {
+        for (let s = -diag; s < diag; s += segLen + gap) {
+          if (!segCenterInField(s, row.off)) continue;
+
+          // posts (only when oblique enough)
+          if (factor > 0.06) {
+            c.strokeStyle = 'rgba(45,48,52,0.75)';
+            for (const t of [0.12, 0.88]) {
+              const px = (s + segLen * t) * dirX + row.off * nX;
+              const py = (s + segLen * t) * dirY + row.off * nY;
+              const [u, v] = toUnit(px, py);
+              const g0 = project(h, u, v);
+              const ppm = ppmAt(h, u, v, H);
+              c.lineWidth = Math.max(1, 0.09 * ppm);
+              c.beginPath();
+              c.moveTo(g0.x, g0.y);
+              c.lineTo(g0.x, g0.y - AXIS_HEIGHT * ppm * factor);
+              c.stroke();
+            }
+          }
+
+          // panel face
+          pathPoly3D(c, h, segPoly(s, row.off, visW, heights[0], heights[1]), 4, H, factor);
+          c.fillStyle = 'rgba(18,28,52,0.92)';
+          c.fill();
+          // sheen
+          pathPoly3D(c, h, segPoly(s, row.off, visW * 0.55, (heights[0] + heights[1]) / 2 + 0.05, (heights[0] + heights[1]) / 2 + 0.05), 4, H, factor);
+          c.fillStyle = 'rgba(90,130,200,0.25)';
+          c.fill();
+        }
+      }
       c.restore();
+
+      // 3) perspective grid (drawn without top-lift clip, strictly on ground quad)
+      if (p.grid && !exportMode) {
+        c.save();
+        c.beginPath();
+        corners.forEach((pt, i) => i === 0 ? c.moveTo(pt.x, pt.y) : c.lineTo(pt.x, pt.y));
+        c.closePath();
+        c.clip();
+        c.strokeStyle = 'rgba(255,255,255,0.55)';
+        c.lineWidth = Math.max(1, canvas.width / 1400);
+        const step = 25;
+        for (let x = 0; x <= W; x += step) {
+          c.beginPath();
+          for (let i = 0; i <= 24; i++) {
+            const pt = project(h, x / W, i / 24);
+            i === 0 ? c.moveTo(pt.x, pt.y) : c.lineTo(pt.x, pt.y);
+          }
+          c.stroke();
+        }
+        for (let y = 0; y <= H; y += step) {
+          c.beginPath();
+          for (let i = 0; i <= 24; i++) {
+            const pt = project(h, i / 24, y / H);
+            i === 0 ? c.moveTo(pt.x, pt.y) : c.lineTo(pt.x, pt.y);
+          }
+          c.stroke();
+        }
+        c.restore();
+      }
     }
 
     // handles (not in export)

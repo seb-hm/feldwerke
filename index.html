@@ -59,8 +59,45 @@
   .row { margin-bottom: 5px; }
   label { display: block; font-size: 0.78rem; margin-bottom: 2px; color: var(--text); }
   label .val { float: right; color: var(--muted); font-variant-numeric: tabular-nums; }
-  input[type=range] { width: 100%; accent-color: var(--green); }
-  input[type=range]:disabled { opacity: 0.45; }
+  input[type=range] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 22px;
+    background: transparent;
+    cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-runnable-track {
+    height: 6px;
+    border-radius: 3px;
+    background: #d3e0d7;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--green);
+    border: 2px solid #fff;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.15);
+    margin-top: -7px;
+    cursor: pointer;
+  }
+  input[type=range]::-moz-range-track {
+    height: 6px;
+    border-radius: 3px;
+    background: #d3e0d7;
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--green);
+    border: 2px solid #fff;
+    cursor: pointer;
+  }
+  input[type=range]:disabled { opacity: 0.45; cursor: default; }
+  input[type=range]:disabled::-webkit-slider-thumb { cursor: default; }
   input[type=number] {
     width: 100%;
     padding: 6px 4px 6px 8px;
@@ -76,7 +113,6 @@
     margin-left: 10px;
     cursor: pointer;
   }
-  input[type=range] { height: 18px; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   button {
     width: 100%;
@@ -226,7 +262,7 @@
     <p class="hint" id="hintText"><b>Schritt 1:</b> Luftbild hochladen oder Demo-Feld laden.</p>
     <div id="dropzone">
       <p class="big">Luftbild hierher ziehen</p>
-      <p>oder klicken zum Ausw&auml;hlen &middot; Bild bleibt lokal im Browser</p>
+      <p>oder klicken zum Ausw&auml;hlen</p>
     </div>
     <canvas id="canvas" style="display:none"></canvas>
   </div>
@@ -445,7 +481,8 @@
     if (h) {
       const factor = p.autoPersp ? estimatePerspFactor() : p.perspManual;
       const W = p.W, H = p.H;
-      const dirX = Math.cos(p.theta), dirY = Math.sin(p.theta);
+      // 0° = rows run along the Tiefe axis (bottom to top in field space)
+      const dirX = -Math.sin(p.theta), dirY = Math.cos(p.theta);
       const nX = -dirY, nY = dirX;
       const diag = Math.hypot(W, H);
       const nRows = Math.ceil(diag / p.spacing) + 1;

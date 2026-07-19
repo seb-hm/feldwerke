@@ -109,12 +109,12 @@
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: 10px;
-    padding: 10px;
+    padding: 28px 36px;
   }
   .hint {
     font-size: 0.8rem;
     color: var(--muted);
-    margin-bottom: 8px;
+    margin-bottom: 14px;
   }
   .hint b { color: var(--green); }
   #dropzone {
@@ -129,7 +129,16 @@
   #dropzone.drag { border-color: var(--green); background: #eef6f0; }
   #dropzone p { margin-bottom: 6px; }
   #dropzone .big { font-size: 1.05rem; color: var(--text); font-weight: 600; }
-  canvas { width: 100%; height: auto; display: block; border-radius: 6px; cursor: crosshair; }
+  canvas {
+    display: block;
+    max-width: 92%;
+    width: auto;
+    height: auto;
+    max-height: calc(100vh - 190px);
+    margin: 0 auto;
+    border-radius: 6px;
+    cursor: crosshair;
+  }
   footer {
     text-align: center;
     font-size: 0.72rem;
@@ -153,10 +162,6 @@
     <input type="file" id="fileInput" accept="image/*" style="display:none">
 
     <h2>2 &middot; Feld markieren</h2>
-    <div class="note">
-      <b>Wichtig:</b> Die 4 Punkte m&uuml;ssen ein echtes Rechteck <i>auf dem Boden</i> markieren
-      (z.&nbsp;B. Schlagecken), nicht den Bildrand. Das Gitter zeigt, ob die Perspektive plausibel ist.
-    </div>
     <div class="checkbox-row">
       <input type="checkbox" id="grid" checked>
       <label for="grid" style="margin:0">Perspektiven-Gitter anzeigen (25&nbsp;m)</label>
@@ -208,7 +213,6 @@
       <div><span>Fl&auml;che</span><b id="kHa">6,0 ha</b></div>
       <div><span>Leistung (~0,8 MWp/ha)</span><b id="kMwp">4,8 MWp</b></div>
       <div><span>Pacht-Indikativ (bis 3.000 &euro;/ha)</span><b id="kPacht">18.000 &euro;/a</b></div>
-      <div class="kpi-note">Grobe Sch&auml;tzung, keine Angebotsbasis.</div>
     </div>
 
     <h2>5 &middot; Export</h2>
@@ -225,7 +229,6 @@
   </div>
 </div>
 
-<footer>Konzept-Demo &middot; rein clientseitig, keine Daten verlassen den Browser</footer>
 
 <script>
 (() => {
@@ -617,11 +620,6 @@
         c.lineWidth = 3;
         c.strokeStyle = '#1d5c3f';
         c.stroke();
-        c.fillStyle = '#1d5c3f';
-        c.font = 'bold ' + HANDLE_R + 'px sans-serif';
-        c.textAlign = 'center';
-        c.textBaseline = 'middle';
-        c.fillText(String(i + 1), pt.x, pt.y);
       });
       c.setLineDash([10, 8]);
       c.lineWidth = 2.5;

@@ -63,10 +63,18 @@
   input[type=range]:disabled { opacity: 0.45; }
   input[type=number] {
     width: 100%;
-    padding: 3px 7px;
+    padding: 6px 4px 6px 8px;
     border: 1px solid var(--border);
     border-radius: 6px;
-    font-size: 0.8rem;
+    font-size: 0.88rem;
+  }
+  input[type=number]::-webkit-inner-spin-button,
+  input[type=number]::-webkit-outer-spin-button {
+    opacity: 1;
+    transform: scale(1.6);
+    transform-origin: right center;
+    margin-left: 10px;
+    cursor: pointer;
   }
   input[type=range] { height: 18px; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -163,7 +171,10 @@
       <input type="checkbox" id="grid" checked>
       <label for="grid" style="margin:0">Perspektiven-Gitter anzeigen (25&nbsp;m)</label>
     </div>
-    <button class="btn-secondary" id="btnResetCorners">Eckpunkte zur&uuml;cksetzen</button>
+    <div style="display:grid;grid-template-columns:1fr 46px;gap:6px">
+      <button class="btn-secondary" id="btnResetCorners">Eckpunkte zur&uuml;cksetzen</button>
+      <button class="btn-secondary" id="btnUndo" title="Letzten Schritt r&uuml;ckg&auml;ngig machen" style="font-size:1.15rem;line-height:1;padding:4px 0">&#8617;</button>
+    </div>
 
     <h2>3 &middot; Anlage konfigurieren</h2>
     <div class="row">
@@ -199,11 +210,11 @@
     <div class="grid2 row">
       <div>
         <label>Breite (m)</label>
-        <input type="number" id="fieldW" value="300" min="20">
+        <input type="number" id="fieldW" value="300" min="20" step="10">
       </div>
       <div>
         <label>Tiefe (m)</label>
-        <input type="number" id="fieldH" value="200" min="20">
+        <input type="number" id="fieldH" value="200" min="20" step="10">
       </div>
     </div>
 
@@ -231,6 +242,7 @@
 
   let img = null;
   let corners = [];          // 4 points in image-natural coordinates: TL, TR, BR, BL
+  let cornerHistory = [];    // undo stack for corner positions
   let dragIdx = -1;
   const HANDLE_R = 14;
   const AXIS_HEIGHT = 2.4;   // m, tracker rotation axis above ground
@@ -244,6 +256,7 @@
       canvas.height = im.naturalHeight;
       canvas.style.display = 'block';
       dropzone.style.display = 'none';
+      cornerHistory = [];
       resetCorners();
       draw();
       setHint('<b>Schritt 2:</b> Die 4 Eckpunkte auf ein Boden-Rechteck ziehen (Gitter pr&uuml;fen), dann Anlage konfigurieren.');
@@ -286,7 +299,16 @@
       { x: w * 0.14, y: h * 0.72 }
     ];
   }
-  document.getElementById('btnResetCorners').onclick = () => { if (img) { resetCorners(); draw(); } };
+  function pushHistory() {
+    cornerHistory.push(corners.map(c => ({ x: c.x, y: c.y })));
+    if (cornerHistory.length > 100) cornerHistory.shift();
+  }
+  document.getElementById('btnResetCorners').onclick = () => {
+    if (img) { pushHistory(); resetCorners(); draw(); }
+  };
+  document.getElementById('btnUndo').onclick = () => {
+    if (img && cornerHistory.length) { corners = cornerHistory.pop(); draw(); }
+  };
 
   function canvasPos(e) {
     const r = canvas.getBoundingClientRect();
@@ -301,7 +323,7 @@
     const scale = canvas.width / canvas.getBoundingClientRect().width;
     const rr = HANDLE_R * scale * 1.6;
     dragIdx = corners.findIndex(c => Math.hypot(c.x - p.x, c.y - p.y) < rr);
-    if (dragIdx >= 0) canvas.setPointerCapture(e.pointerId);
+    if (dragIdx >= 0) { pushHistory(); canvas.setPointerCapture(e.pointerId); }
   });
   canvas.addEventListener('pointermove', e => {
     if (dragIdx < 0) return;
